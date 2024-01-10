@@ -1,0 +1,129 @@
+import dash
+from dash import html, dcc
+from dash.dependencies import Input, Output
+
+import pandas as pd
+import numpy as np
+ 
+import plotly.express as px
+import plotly.graph_objects as go
+import dash_bootstrap_components as dbc
+
+from dash_bootstrap_templates import load_figure_template
+
+load_figure_template("minty")
+
+
+app = dash.Dash(external_stylesheets=[dbc.themes.MINTY]) #estilizaçao com botstrap
+server = app.server
+
+
+df_data = pd.read_csv("supermarket_sales.csv")
+df_data["Date"] = pd.to_datetime(df_data["Date"])
+
+
+# =========  Layout  =========== #
+app.layout = html.Div(children=[
+
+#DBC SAO PROPTS DO BOOTSTRAP
+
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Card([
+                            html.H2("ASIMOV", style={"font-family": "Voltaire", "font-size": "60px"}),
+                            html.Hr(),
+
+                            html.H5("Cidades:"),
+                            dcc.Checklist(df_data["City"].value_counts().index,
+                            df_data["City"].value_counts().index, id="check_city",
+                            inputStyle={"margin-right": "5px", "margin-left": "20px"}),
+
+                            html.H5("Variável de análise:", style={"margin-top": "30px"}),
+                            dcc.RadioItems(["gross income", "Rating"], "gross income", id="main_variable",
+                            inputStyle={"margin-right": "5px", "margin-left": "20px"}),
+
+                        ], style={"height": "90vh", "margin": "20px", "padding": "20px"})
+                        
+                    ], sm=2), #SM = ATRIBUTO DE PROPORÇAO PARA O LAYOUT SE ADEQUAR A DISPOSITIVOS MOVEIS A FOMATOS DE TELA MENORES 
+                                      (xs, sm, md, LG, xl, xxl = OUTROS FORMATOS PARA TELA  )
+#BOOTSTRAP TRABALHA CRIANDO UM CONTEINER COM UMA GRANDE LINHA E DIVIDE EM 12 COLUNAS ESSE CONTEINER ONDE E POSSIVEL ADEQUAR O PROJETO 
+#EM PROPORÇAO AO QUE PRECISO ACIMA TEMOS UM SM =2 SMALL MEDIUM TELAS PEQUENAS ONDE ESSE COMPONENTE OCUPARA APENAS 2 COLUNAS DAS 12 ASSIM PODE IR 
+#CRIANDO PROPORÇAO PRO FROMATO DE TELA QUE DESEJAR POR ISSO TEMOS MD = MEDIA MEDIUM TELA MEDIA ,LG=TELAS MAIORES 
+
+                    dbc.Col([
+                        dbc.Row([
+                            dbc.Col([dcc.Graph(id="city_fig"),], sm=4),
+                            dbc.Col([dcc.Graph(id="gender_fig"),], sm=4),
+                            dbc.Col([dcc.Graph(id="pay_fig"),], sm=4)
+                        ]),
+                        dbc.Row([dcc.Graph(id="income_per_date_fig")]),
+                        dbc.Row([dcc.Graph(id="income_per_product_fig")]),
+                    ], sm=10)
+                ])   
+            ]
+        )
+
+
+# =========  Callbacks  =========== #
+@app.callback([
+            Output('city_fig', 'figure'), #TODAS OS IDS QUE SAO OS PARAMETROS 1 E O PARAMETRO 2 SE REFFERE O QUE SERA ALTERADO NO CASO SUA FIGURE QUE SERA O GRAFICO 
+            Output('pay_fig', 'figure'),
+            Output('gender_fig', 'figure'),
+            Output('income_per_date_fig', 'figure'),
+            Output('income_per_product_fig', 'figure'),
+        ],
+            [
+                Input('check_city', 'value'), #ID CHECK_CITY RESPECTIVO AS CIDADDES ESTA NO LAYOUT ACIMA EM UM HTML TRATANDO DADOS DO CSV PEGANDO AS CIDADES 
+#QUE SERAO RELEVANTES NOS DADOS E O PARAMETRO 2 O SEU VALUE SEU VALOR SENDO ALTERADO OS  OUTPUTS SOFRERAO MUDANÇAS 
+                Input('main_variable', 'value')
+            ])
+def render_graphs(cities, main_variable): #NESSE DASH DOIS ID PARAMETROS SERAO ENTRADAS PARA ALTERAÇAO NO LAYOUT 1 CIDADES, 2 PARAMETRO SUBDIVIDIDO ENTRE MEDIA E SOMATORIO
+    # cities = ["Yangon", "Mandalay"]
+    # main_variable= "gross income"
+
+    operation = np.sum if main_variable == "gross income" else np.mean # ESSA VAR ESPECIFICA QUANDO O PARMETRO 2 FOR GROSS INCOME ELE RETORNA SOMATORIO
+#QUANDO NAO FOR RETORNA A MEDIA  
+
+    df_filtered = df_data[df_data["City"].isin(cities)] #METODO ISIN  = PEGA O DF FILTRA ELE EM CIDADES TODAS AS CIDADES MAS SOMENTE AS CIDADES FILTRADAS NO CITIES 
+# QUE ENTRAM DE PARAMETRO NA FUNÇAO
+
+    df_city = df_filtered.groupby("City")[main_variable].apply(operation).to_frame().reset_index()
+
+#ESSAS FUNCOES VAO PEGAR OS DADOS E TRATAR CONFORME NECESSIDADE DO PROJETO PRIMEIRO AGRUPA AS CIDADES DEFINE PELLO MAIN VARIABLE SE SERA USADO OPERACAO 
+#DE SOMA DOS DADOS OU DE MEDIA DOS DADOS PELO APPLY APOS TRATAR CRIA UM DATA FRAME E USA O RESET INDEX PARA FORMAR UMA TABELA COMPLETA 
+#ESSA TABELA E NECESSARIA PARA POSCIONAR OS DADOS EM EIXO X E Y NO GRAFICO 
+
+    df_gender = df_filtered.groupby(["Gender", "City"])[main_variable].apply(operation).to_frame().reset_index()
+
+    df_payment = df_filtered.groupby("Payment")[main_variable].apply(operation).to_frame().reset_index()
+    
+    df_income_time = df_filtered.groupby("Date")[main_variable].apply(operation).to_frame().reset_index()
+    df_product_income = df_filtered.groupby(["Product line", "City"])[main_variable].apply(operation).to_frame().reset_index()
+
+    fig_city = px.bar(df_city, x="City", y=main_variable)
+    fig_payment = px.bar(df_payment, y="Payment", x=main_variable, orientation="h") 
+
+#ORIENTATION SERVE PARA DEFINIR O GRAFICO DE BARRAS A VISAO SERA HORIZONTAL OU VERTICAL
+
+    fig_gender = px.bar(df_gender, y=main_variable, x="Gender", color="City", barmode="group")
+
+#BARMODE = GROUP E COLOR = CITY PEGA TODOS OS DADOS E OS COLOCA EM COMPARAÇAO CRIANDO BARRAS COLORIDAS PARA CADA CONJUNTO DE DADOS FACILITA A VISUALIZAÇAO 
+
+    fig_product_income = px.bar(df_product_income, x=main_variable, y="Product line", color="City", orientation="h", barmode="group")
+    fig_income_date = px.bar(df_income_time, y=main_variable, x="Date")
+    
+
+    for fig in [fig_city, fig_payment, fig_gender, fig_income_date]:
+
+        fig.update_layout(margin=dict(l=0, r=0, t=20, b=20), height=200, template="minty")
+
+#L = LEFT / R = RIGHT / T = TOP / B = BOTTOM ESTILIZAÇAO DE MARGEM E TAMANHOO DO LAYOUT
+
+    fig_product_income.update_layout(margin=dict(l=0, r=0, t=20, b=20), height=500)
+    
+    return fig_city, fig_payment, fig_gender, fig_income_date, fig_product_income
+
+
+# =========  Run server  =========== #
+if __name__ == "__main__":
+    app.run_server(debug=False)
